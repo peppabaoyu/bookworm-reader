@@ -548,6 +548,42 @@ body[data-view="library"] #view-reader { display: none; }
   .modal { max-height: 90vh; }
 }
 
+/* ============ 牛津式查词卡 ============ */
+.dict-pop { width: 400px; max-height: 78vh; overflow-y: auto; user-select: text; }
+.dp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.dp-word { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dp-w { font-size: 19px; font-weight: 700; color: var(--accent); }
+.dp-play { font-size: 15px; }
+.dp-head-ops { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.dp-star { font-size: 16px; color: var(--dim); }
+.dp-star.on { color: var(--accent); }
+.dp-phon { display: flex; align-items: center; gap: 6px; color: #8ab4c8; font-size: 13px; margin: 6px 0 2px; }
+.dp-mini-play { font-size: 10px; padding: 1px 5px; }
+.dp-zh { margin-top: 8px; }
+.dp-sense { font-size: 13.5px; line-height: 1.6; color: #efe6cf; padding: 1.5px 0; }
+.dp-en { margin-top: 7px; font-size: 12px; line-height: 1.55; color: var(--dim); }
+.dp-sentence { margin-top: 10px; background: rgba(212, 162, 78, 0.07); border-left: 2px solid rgba(212, 162, 78, 0.45); border-radius: 0 6px 6px 0; padding: 7px 10px; }
+.dp-s-en { font-size: 12.5px; line-height: 1.55; color: var(--fg); }
+.dp-s-zh { font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.dp-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.dp-label { font-size: 11px; color: var(--dim); flex-shrink: 0; margin-right: 2px; }
+.dp-chip {
+  font-size: 12px; color: var(--fg); background: var(--bg4);
+  border-radius: 5px; padding: 2px 8px; cursor: pointer;
+}
+.dp-chip:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* ============ 生词本 ============ */
+.vp-scope { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.vp-item .vp-word { font-size: 14.5px; font-weight: 700; color: var(--accent); }
+.vp-count { font-size: 11px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 8px; padding: 0 6px; }
+.vp-zh { font-size: 12.5px; color: var(--fg); margin-top: 3px; line-height: 1.5; }
+.vp-books { font-size: 11px; margin-top: 4px; }
+.vp-cats { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.vp-cats .chip { font-size: 10.5px; padding: 1px 7px; }
+.vp-cat-row { display: flex; align-items: center; gap: 9px; padding: 7px 2px; font-size: 13.5px; cursor: pointer; }
+.vp-cat-row input { accent-color: var(--accent); width: 15px; height: 15px; }
+
 /* ============ Smoke/杂项 ============ */
 .cat-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 

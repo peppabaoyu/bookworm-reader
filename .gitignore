@@ -10,3 +10,8 @@ android/build/
 android/assets/
 android/res/drawable/icon.png
 android/debug.keystore
+app/models/
+assets/icon.png
+assets/icon.ico
+assets/avatar-src.jpg
+app/data/

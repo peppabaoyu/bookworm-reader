@@ -164,6 +164,17 @@
 
     appVersion: async () => window.BW.APP_VERSION || '1.0.0',
 
+    readAppData: async (name) => {
+      if (window.AndroidBridge && AndroidBridge.readAsset) {
+        try { return AndroidBridge.readAsset('app/data/' + name); } catch (e) { return null; }
+      }
+      try {
+        const r = await fetch('data/' + name);
+        if (!r.ok) return null;
+        return await r.text();
+      } catch (e) { return null; }
+    },
+
     checkUpdate: async () => {
       try {
         let repo = 'peppabaoyu/bookworm-reader';

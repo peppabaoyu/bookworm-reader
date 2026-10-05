@@ -104,6 +104,7 @@
       });
       if (this.bilingual) window.BW.Bilingual.prepareDOM();
       this.indexDirty = true;
+      this._sentCacheDirty = true;
       this.buildIndex();
       window.BW.Notes.applyAll();
       this.buildIndex();
@@ -444,7 +445,7 @@
         if (e.clientX - r.left < r.width / 2) this.prevPage(); else this.nextPage();
       });
 
-      // 双击词语 → 播放标准读音 + 中文翻译
+      // 双击词语 → 播放标准读音 + 牛津式查词卡 (音标/释义/例句/同义词/形近词)
       scroll.addEventListener('dblclick', (e) => {
         setTimeout(() => {
           const sel = window.getSelection();
@@ -453,9 +454,14 @@
           if (m && m[0].length > 0 && m[0].length <= 40) {
             window.BW.Annotate._suppressToolbarOnce = true;
             window.BW.TTS.speakSelection(m[0]);
-            let rect = null;
-            try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (err) {}
-            window.BW.Trans.show(m[0], rect && rect.width ? rect : { left: e.clientX, top: e.clientY, width: 0, height: 0 });
+            let rect = null, sentence = '';
+            try {
+              const range = sel.getRangeAt(0);
+              rect = range.getBoundingClientRect();
+              const g = window.BW.Annotate.pointG(range.startContainer, range.startOffset, true);
+              if (typeof g === 'number') sentence = this.sentenceAtG(g);
+            } catch (err) {}
+            window.BW.Trans.show(m[0], rect && rect.width ? rect : { left: e.clientX, top: e.clientY, width: 0, height: 0 }, { sentence });
           }
         }, 10);
       });
@@ -582,6 +588,25 @@
     getFullText() {
       this.ensureIndex();
       return this.nodeIndex.map(e => e.node.data).join('');
+    },
+
+    /* 双击查词用: 定位 g 所在句子 (带缓存) */
+    sentenceAtG(g) {
+      try {
+        if (!this._sentCache || this._sentCacheDirty) {
+          this._sentCache = this.buildSentences();
+          this._sentCacheDirty = false;
+        }
+        const arr = this._sentCache;
+        let lo = 0, hi = arr.length - 1;
+        if (!arr.length) return '';
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (arr[mid].gStart <= g) lo = mid; else hi = mid - 1;
+        }
+        const s = arr[lo];
+        return g >= s.gStart && g <= s.gEnd ? s.text : '';
+      } catch (e) { return ''; }
     }
   };
 

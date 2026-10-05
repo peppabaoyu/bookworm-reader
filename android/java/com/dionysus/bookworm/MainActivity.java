@@ -237,5 +237,20 @@ public class MainActivity extends Activity {
         public void toast(String msg) {
             ui.post(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_SHORT).show());
         }
+
+        @JavascriptInterface
+        public String readAsset(String path) {
+            try {
+                java.io.InputStream is = getAssets().open(path);
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = is.read(buf)) > 0) bo.write(buf, 0, n);
+                is.close();
+                return bo.toString("UTF-8");
+            } catch (Exception e) {
+                return null;
+            }
+        }
     }
 }

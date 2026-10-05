@@ -8,7 +8,8 @@ const os = require('os');
 const SMOKE = process.argv.includes('--smoke');
 const SHOT = process.argv.includes('--shot');
 const WEBTEST = process.argv.includes('--webtest');
-if (SMOKE || SHOT || WEBTEST) {
+const MODELTEST = process.argv.includes('--modeltest');
+if (SMOKE || SHOT || WEBTEST || MODELTEST) {
   app.setPath('userData', path.join(os.tmpdir(), 'bookworm-smoke-' + Date.now()));
 }
 
@@ -112,6 +113,20 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   ensureDirs();
+  if (MODELTEST) {
+    const t0 = Date.now();
+    const emit = (obj) => {
+      const line = 'MODEL_JSON:' + JSON.stringify(obj);
+      console.log(line);
+      const outArg = process.argv.find(a => a.startsWith('--smoke-out='));
+      if (outArg) { try { fs.writeFileSync(outArg.slice('--smoke-out='.length), line); } catch (e) {} }
+    };
+    getLocalTranslator()
+      .then(tr => tr('The river ran below the road.', { max_new_tokens: 256 }))
+      .then(r => { emit({ ok: true, ms: Date.now() - t0, zh: r[0] && r[0].translation_text }); app.exit(0); })
+      .catch(e => { emit({ ok: false, error: String(e && e.message || e).slice(0, 300) }); app.exit(1); });
+    return;
+  }
   Menu.setApplicationMenu(null);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -121,6 +136,10 @@ app.whenReady().then(() => {
       googleSingle('hello', 'zh-CN').catch(() => disableGoogle());
     }
   }, 2500);
+  // 预热内置离线翻译模型, 开启中英对照时即秒出
+  if (!SMOKE && !SHOT && !WEBTEST) {
+    setTimeout(() => { getLocalTranslator().catch(() => {}); }, 12000);
+  }
 });
 
 app.on('window-all-closed', () => { app.quit(); });
@@ -225,7 +244,62 @@ ipcMain.handle('trans:save', async (e, bookId, obj) => {
   return true;
 });
 
-/* ---------------- translation providers ---------------- */
+/* ---------------- 内置离线翻译模型 (本地优先, 网络兜底) ---------------- */
+const MODEL_DIR_NAME = 'opus-mt-en-zh';
+
+function modelDir() {
+  // 打包后 asarUnpack 到 app.asar.unpacked; 开发时在 app/models
+  const dev = path.join(__dirname, 'app', 'models', MODEL_DIR_NAME);
+  if (fs.existsSync(path.join(dev, 'config.json'))) return path.dirname(dev);
+  const packed = path.join(__dirname, 'app.asar.unpacked', 'app', 'models', MODEL_DIR_NAME);
+  if (fs.existsSync(path.join(packed, 'config.json'))) return path.dirname(packed);
+  return null;
+}
+
+let localTranslator = null;
+let localLoadState = 'idle';   // idle | loading | ready | failed
+let localLoadPromise = null;
+
+function getLocalTranslator() {
+  if (localLoadState === 'ready') return Promise.resolve(localTranslator);
+  if (localLoadState === 'failed') return Promise.reject(new Error('本地模型不可用'));
+  if (!localLoadPromise) {
+    localLoadState = 'loading';
+    localLoadPromise = (async () => {
+      const dir = modelDir();
+      if (!dir) throw new Error('未找到内置翻译模型');
+      // @xenova/transformers 是 ESM, Electron 33 的 Node 20 需用动态 import
+      const mod = await import('@xenova/transformers');
+      const pipeline = mod.pipeline || (mod.default && mod.default.pipeline);
+      const env = mod.env || (mod.default && mod.default.env);
+      env.allowLocalModels = true;
+      env.allowRemoteModels = false;   // 完全离线
+      env.localModelPath = dir;        // 模型根目录, 以名称引用 opus-mt-en-zh
+      localTranslator = await pipeline('translation', MODEL_DIR_NAME, { quantized: true });
+      localLoadState = 'ready';
+      console.log('内置离线翻译模型已加载');
+      return localTranslator;
+    })().catch(err => {
+      localLoadState = 'failed';
+      console.error('本地翻译模型加载失败, 将使用网络翻译:', String(err && err.message || err).slice(0, 200));
+      throw err;
+    });
+  }
+  return localLoadPromise;
+}
+
+async function translateLocal(texts, to) {
+  if (to !== 'zh-CN') throw new Error('本地模型仅支持英译中');
+  const translator = await getLocalTranslator();
+  const out = [];
+  for (const t of texts) {
+    const r = await translator(String(t || '').slice(0, 900), { max_new_tokens: 512 });
+    out.push((r && r[0] && r[0].translation_text || '').trim());
+  }
+  return out;
+}
+
+/* ---------------- translation providers (网络兜底) ---------------- */
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BookwormReader/1.0';
 // 网络级失败后短暂禁用 google, 避免每句都等超时
 let googleDisabledUntil = 0;
@@ -304,13 +378,21 @@ ipcMain.handle('net:translate', async (e, texts, opts) => {
   const arr = (texts || []).map(t => String(t || ''));
   if (!arr.length) return { results: [], provider: 'none' };
 
+  // 0) 内置离线模型 (断网兜底; 联网时网络通道通常更快, 故作后备)
+  const localAvailable = modelDir() && localLoadState !== 'failed';
+  if (opts && opts.forceLocal && localAvailable) {
+    try {
+      const r = await translateLocal(arr, to);
+      if (r.every(x => x && x.trim())) return { results: r, provider: '内置离线模型' };
+    } catch (err) { /* 落到网络 */ }
+  }
+
+  // 1) custom google-compatible endpoint
   const googleErr = (err) => {
     // 网络不通(非 HTTP 业务错误)时禁用 10 分钟
     const msg = String(err && err.message || err);
     if (/timeout|aborted|network|fetch failed|ECONN|ENOTFOUND|HTTP 5\d\d/i.test(msg)) disableGoogle();
   };
-
-  // 1) custom google-compatible endpoint
   if (customBase) {
     const r = await mapLimit(arr, 3, t => googleSingle(t, to, customBase.replace(/\/+$/, '')));
     if (r.every(x => x !== null)) return { results: r, provider: 'custom' };
@@ -338,6 +420,13 @@ ipcMain.handle('net:translate', async (e, texts, opts) => {
     if (good >= Math.ceil(arr.length * 0.7)) {
       return { results: r.map(x => x || ''), provider: 'mymemory' };
     }
+  }
+  // 4) 内置离线模型兜底 (断网也可用, 速度约数秒/句)
+  if (localAvailable) {
+    try {
+      const r = await translateLocal(arr, to);
+      if (r.every(x => x && x.trim())) return { results: r, provider: '内置离线模型' };
+    } catch (err) {}
   }
   throw new Error('所有翻译服务都失败了，请在设置中配置自定义翻译接口，或检查网络');
 });
@@ -376,6 +465,19 @@ ipcMain.handle('dialog:save-text', async (e, opts) => {
 });
 
 ipcMain.handle('app:version', () => app.getVersion());
+
+/* 内置词典数据 (牛津式查词卡用) */
+ipcMain.handle('app:read-data', (e, name) => {
+  if (!/^[a-z0-9_-]+\.tsv$/i.test(name)) throw new Error('非法文件名');
+  const candidates = [
+    path.join(__dirname, 'app', 'data', name),
+    path.join(__dirname, 'app.asar.unpacked', 'app', 'data', name)
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+  }
+  return null;
+});
 
 /* ---------------- 自动检查更新 (GitHub Releases) ---------------- */
 function updateRepo() {

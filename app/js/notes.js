@@ -308,8 +308,9 @@
 
   /* ============ 笔记面板 ============ */
   const Panel = {
-    tab: 'note',   // note | bookmark
+    tab: 'note',        // note | bookmark | vocab
     query: '',
+    vocabScope: 'book', // book | all | cat:<名称>
 
     panelOpen() { const p = $('#notes-panel'); return p && !p.hidden; },
 
@@ -327,19 +328,11 @@
       const panel = $('#notes-panel');
       if (!panel || !R.book) return;
       const notes = Store.getNotes(R.book.id);
-      const list = notes.filter(n => n.type === this.tab);
       const q = this.query.trim().toLowerCase();
-      const filtered = q ? list.filter(n => {
-        const chTitle = (R.chapters[n.chapterIndex] && R.chapters[n.chapterIndex].title) || '';
-        return (n.text || '').toLowerCase().includes(q) ||
-          (n.comment || '').toLowerCase().includes(q) ||
-          chTitle.toLowerCase().includes(q);
-      }) : list;
-      filtered.sort((a, b) => a.gStart - b.gStart);
 
       const head = $('.np-head', panel);
       head.innerHTML = '';
-      head.appendChild(el('div', { class: 'np-title' }, '笔记与书签'));
+      head.appendChild(el('div', { class: 'np-title' }, '笔记 · 书签 · 生词本'));
       head.appendChild(el('button', {
         class: 'btn tiny ghost', title: '导出本书笔记为 Markdown',
         onclick: () => window.BW.Notes.exportMD(R.book)
@@ -351,17 +344,158 @@
       const mkTab = (key, label) => el('button', {
         class: 'np-tab' + (this.tab === key ? ' active' : ''),
         onclick: () => { this.tab = key; this.renderPanel(); }
-      }, label + ' (' + notes.filter(n => n.type === key).length + ')');
+      }, label + ' (' + (key === 'vocab' ? Store.vocab.filter(v => !this._vocabBookFilter() || v.bookId === R.book.id).length : notes.filter(n => n.type === key).length) + ')');
       tabs.appendChild(mkTab('note', '批注标记'));
       tabs.appendChild(mkTab('bookmark', '书签'));
+      tabs.appendChild(mkTab('vocab', '生词本'));
 
       const searchBox = $('.np-search', panel);
       searchBox.innerHTML = '';
-      const input = el('input', { class: 'input', placeholder: '搜索原文、批注或章节…', value: this.query });
-      input.addEventListener('input', window.BW.debounce(() => { this.query = input.value; this.renderList(filtered); }, 150));
+      const input = el('input', { class: 'input', placeholder: this.tab === 'vocab' ? '搜索生词…' : '搜索原文、批注或章节…', value: this.query });
+      input.addEventListener('input', window.BW.debounce(() => { this.query = input.value; this.renderPanel(); }, 150));
       searchBox.appendChild(input);
 
+      if (this.tab === 'vocab') {
+        this.renderVocab(q);
+        return;
+      }
+
+      const list = notes.filter(n => n.type === this.tab);
+      const filtered = q ? list.filter(n => {
+        const chTitle = (R.chapters[n.chapterIndex] && R.chapters[n.chapterIndex].title) || '';
+        return (n.text || '').toLowerCase().includes(q) ||
+          (n.comment || '').toLowerCase().includes(q) ||
+          chTitle.toLowerCase().includes(q);
+      }) : list;
+      filtered.sort((a, b) => a.gStart - b.gStart);
       this.renderList(filtered);
+    },
+
+    _vocabBookFilter() {
+      return this.vocabScope === 'book' ? window.BW.Reader.book.id : null;
+    },
+
+    /* ---------- 生词本列表 ---------- */
+    renderVocab(q) {
+      const R = window.BW.Reader;
+      const panel = $('#notes-panel');
+      const listEl = $('.np-list', panel);
+
+      // 范围切换 chips
+      const scope = el('div', { class: 'vp-scope' });
+      const mkChip = (key, label) => el('button', {
+        class: 'chip' + (this.vocabScope === key ? ' active' : ''),
+        onclick: () => { this.vocabScope = key; this.renderPanel(); }
+      }, label);
+      scope.appendChild(mkChip('book', '本书'));
+      scope.appendChild(mkChip('all', '全部'));
+      for (const c of Store.vocabCats) {
+        scope.appendChild(mkChip('cat:' + c, c));
+      }
+      scope.appendChild(el('button', {
+        class: 'chip vp-add-cat', title: '新建自定义分类',
+        onclick: () => {
+          const inp = el('input', { class: 'input', placeholder: '分类名称，如：考研核心' });
+          window.BW.openModal({
+            title: '新建生词分类',
+            body: el('div', {}, el('div', { class: 'field-label' }, '名称'), inp),
+            actions: [
+              el('button', { class: 'btn ghost', onclick: () => window.BW.closeModal() }, '取消'),
+              el('button', {
+                class: 'btn primary', onclick: async () => {
+                  await Store.addVocabCat(inp.value);
+                  window.BW.closeModal();
+                  if (inp.value.trim()) this.vocabScope = 'cat:' + inp.value.trim();
+                  this.renderPanel();
+                }
+              }, '创建')
+            ]
+          });
+          setTimeout(() => inp.focus(), 60);
+        }
+      }, '＋分类'));
+      listEl.innerHTML = '';
+      listEl.appendChild(scope);
+
+      // 数据聚合
+      let items;
+      if (this.vocabScope === 'all') {
+        items = Store.vocabAggregated().map(a => ({
+          word: a.word, count: a.count, books: a.books,
+          cats: Array.from(a.cats), g: null
+        }));
+      } else if (this.vocabScope.startsWith('cat:')) {
+        const cat = this.vocabScope.slice(4);
+        items = Store.vocabAggregated().filter(a => a.cats.has(cat)).map(a => ({ word: a.word, count: a.count, books: a.books, cats: Array.from(a.cats), g: null }));
+      } else {
+        const bid = R.book.id;
+        items = Store.vocab.filter(v => v.bookId === bid).map(v => ({ word: v.word, count: 1, books: [v.bookTitle], cats: v.cats || [], g: null }));
+      }
+      if (q) items = items.filter(i => i.word.includes(q));
+      if (!items.length) {
+        listEl.appendChild(el('div', { class: 'np-empty' },
+          this.query ? '没有匹配的生词' : '双击正文单词 → 点查词卡右上角 ★ 即可加入生词本'));
+        return;
+      }
+
+      for (const it of items) {
+        const d = window.BW.Dictionary.loaded ? window.BW.Dictionary.lookup(it.word) : null;
+        const item = el('div', { class: 'np-item vp-item' },
+          el('div', { class: 'np-item-head' },
+            el('span', { class: 'vp-word' }, it.word),
+            it.count > 1 ? el('span', { class: 'vp-count', title: '在 ' + it.books.length + ' 本书中出现' }, '×' + it.count) : null,
+            el('span', { class: 'np-time' }, d && d.phonetic ? '/' + d.phonetic.replace(/^\/|\/$/g, '') + '/' : '')),
+          d && d.zh ? el('div', { class: 'vp-zh' }, d.zh.split('⏎')[0].slice(0, 80)) : null,
+          it.count > 1 && it.books.length ? el('div', { class: 'vp-books dim' }, '出现于: ' + it.books.join('、').slice(0, 60)) : null,
+          it.cats.length ? el('div', { class: 'vp-cats' }, it.cats.map(c => el('span', { class: 'chip' }, c))) : null,
+          el('div', { class: 'np-item-ops' },
+            el('button', { class: 'btn tiny ghost', title: '播放读音', onclick: (e) => { e.stopPropagation(); window.BW.TTS.speakSelection(it.word); } }, '🔊'),
+            el('button', { class: 'btn tiny ghost', title: '查看词典', onclick: (e) => { e.stopPropagation(); window.BW.Trans.lookupWord(it.word, {}); } }, '查词'),
+            el('button', { class: 'btn tiny ghost', title: '分类到…', onclick: (e) => { e.stopPropagation(); this.vocabCatEditor(it.word); } }, '🏷'),
+            el('button', {
+              class: 'btn tiny ghost danger', title: '删除',
+              onclick: async (e) => {
+                e.stopPropagation();
+                if (this.vocabScope === 'book') await Store.removeVocab(it.word, R.book.id);
+                else await Store.removeVocab(it.word, null);
+                this.renderPanel();
+              }
+            }, '🗑')));
+        listEl.appendChild(item);
+      }
+    },
+
+    vocabCatEditor(word) {
+      const R = window.BW.Reader;
+      const boxes = Store.vocabCats.map(c => {
+        const on = Store.vocab.some(v => v.word === word && (v.cats || []).includes(c));
+        return { c, on };
+      });
+      const rows = el('div', {});
+      const sync = () => {
+        rows.innerHTML = '';
+        if (!boxes.length) rows.appendChild(el('div', { class: 'dim', style: { margin: '6px 0' } }, '还没有自定义分类，先在生词本面板点「＋分类」创建'));
+        for (const b of boxes) {
+          rows.appendChild(el('label', { class: 'vp-cat-row' },
+            el('input', { type: 'checkbox', checked: b.on ? true : null, onchange: (e) => { b.on = e.target.checked; } }),
+            el('span', {}, b.c)));
+        }
+      };
+      sync();
+      window.BW.openModal({
+        title: `分类「${word}」`,
+        body: el('div', {}, rows),
+        actions: [
+          el('button', { class: 'btn ghost', onclick: () => window.BW.closeModal() }, '取消'),
+          el('button', {
+            class: 'btn primary', onclick: async () => {
+              for (const b of boxes) await Store.assignVocabCat(word, b.c, b.on);
+              window.BW.closeModal();
+              if (this.panelOpen()) this.renderPanel();
+            }
+          }, '保存')
+        ]
+      });
     },
 
     renderList(items) {

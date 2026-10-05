@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('bw', {
   saveTextFile: (opts) => ipcRenderer.invoke('dialog:save-text', opts),
   appVersion: () => ipcRenderer.invoke('app:version'),
   checkUpdate: () => ipcRenderer.invoke('updater:check'),
+  readAppData: (name) => ipcRenderer.invoke('app:read-data', name),
 
   // smoke
   getSmokeSamples: () => ipcRenderer.invoke('smoke:samples'),
