@@ -365,7 +365,7 @@ function updateRepo() {
     const c = JSON.parse(fs.readFileSync(path.join(userDataDir(), 'update-repo.json'), 'utf8'));
     if (c && typeof c.repo === 'string' && c.repo.includes('/')) return c.repo;
   } catch (err) {}
-  return 'dionysus/bookworm-reader';
+  return 'peppabaoyu/bookworm-reader';
 }
 
 function isNewerVersion(a, b) {
