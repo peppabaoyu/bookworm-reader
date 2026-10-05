@@ -21,7 +21,7 @@
   <!-- ================= 书架 ================= -->
   <div id="view-library">
     <header class="lib-top">
-      <div class="lib-brand"><span class="brand-mark">❦</span>书虫<span class="brand-sub">Bookworm · 英语阅读器</span></div>
+      <div class="lib-brand"><span class="brand-mark">❦</span>书虫<span class="brand-sub" id="brand-version">Bookworm · 英语阅读器</span></div>
       <div class="lib-searchbox">
         <span class="search-ico">⌕</span>
         <input id="lib-search" placeholder="按书名、作者或分类搜索…" autocomplete="off">
@@ -32,6 +32,7 @@
         <option value="title">按书名</option>
       </select>
       <button id="btn-continue" class="btn primary cont-btn" hidden></button>
+      <button id="btn-check-update" class="btn ghost upd-btn" title="手动检查书虫新版本">⟳ 检查更新</button>
       <button id="btn-import" class="btn primary">＋ 导入书籍</button>
     </header>
     <div class="lib-chips-row">

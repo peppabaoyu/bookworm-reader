@@ -295,6 +295,14 @@
       return r.provider + ': ' + r.results[0].slice(0, 30);
     });
 
+    await step('更新检查入口', async () => {
+      assert(document.querySelector('#btn-check-update'), '顶栏缺少检查更新按钮');
+      assert(!document.querySelector('#btn-check-update').hidden, '按钮被隐藏');
+      const v = await window.bw.appVersion();
+      assert(v && /^\d+\.\d+\.\d+/.test(v), '版本号异常: ' + v);
+      return 'v' + v;
+    });
+
     await step('打开 DOCX / MOBI', async () => {
       const docx = imported.find(b => b.format === 'docx');
       const mobi = imported.find(b => b.format === 'mobi');

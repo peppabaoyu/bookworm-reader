@@ -284,6 +284,21 @@
     search.addEventListener('input', doSearch);
     search.addEventListener('keydown', (e) => { if (e.key === 'Escape') { search.value = ''; Lib.query = ''; Lib.render(); } });
 
+    // 版本号显示
+    window.bw.appVersion().then(v => {
+      const brand = $('#brand-version');
+      if (brand) brand.textContent = 'Bookworm v' + v;
+    });
+
+    // 手动检查更新 (顶栏显眼入口, 桌面/手机都有)
+    const updBtn = $('#btn-check-update');
+    updBtn.addEventListener('click', async () => {
+      updBtn.disabled = true;
+      updBtn.textContent = '⟳ 检查中…';
+      try { await window.BW.App.checkUpdate(true); }
+      finally { updBtn.disabled = false; updBtn.textContent = '⟳ 检查更新'; }
+    });
+
     $('#btn-import').addEventListener('click', async () => {
       const r = await window.bw.selectAndImport();
       if (r.canceled) return;

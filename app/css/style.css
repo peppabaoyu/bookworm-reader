@@ -180,6 +180,9 @@ body[data-view="library"] #view-reader { display: none; }
 .sort-sel { width: auto; flex-shrink: 0; }
 .cont-btn { margin-left: auto; }
 #btn-import { flex-shrink: 0; }
+.upd-btn { flex-shrink: 0; color: var(--accent); border-color: rgba(212, 162, 78, 0.45); }
+.upd-btn:hover { background: var(--accent-soft); }
+.upd-btn:disabled { opacity: 0.6; cursor: wait; }
 
 .lib-chips-row { padding: 2px 24px 12px; border-bottom: 1px solid var(--line); }
 .lib-chips { display: flex; gap: 8px; flex-wrap: wrap; }

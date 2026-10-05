@@ -1,7 +1,7 @@
 {
   "name": "bookworm-reader",
   "productName": "书虫",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "书虫 - 英语文献与书籍桌面阅读器",
   "main": "main.js",
   "author": "Dionysus",
