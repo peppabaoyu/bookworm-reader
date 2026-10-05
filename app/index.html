@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src file: data: blob:; font-src file: data:; connect-src 'self' https: http:;">
+<title>书虫</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-view="library">
+
+  <!-- 更新横幅 -->
+  <div id="update-banner" hidden>
+    <span class="ub-ico">⬆</span>
+    <span id="ub-text">发现新版本</span>
+    <button id="ub-download" class="btn tiny primary">立即下载</button>
+    <button id="ub-close" class="icon-btn" title="关闭">✕</button>
+  </div>
+
+  <!-- ================= 书架 ================= -->
+  <div id="view-library">
+    <header class="lib-top">
+      <div class="lib-brand"><span class="brand-mark">❦</span>书虫<span class="brand-sub">Bookworm · 英语阅读器</span></div>
+      <div class="lib-searchbox">
+        <span class="search-ico">⌕</span>
+        <input id="lib-search" placeholder="按书名、作者或分类搜索…" autocomplete="off">
+      </div>
+      <select id="lib-sort" class="input sort-sel" title="排序方式">
+        <option value="recent">按最近阅读</option>
+        <option value="added">按添加时间</option>
+        <option value="title">按书名</option>
+      </select>
+      <button id="btn-continue" class="btn primary cont-btn" hidden></button>
+      <button id="btn-import" class="btn primary">＋ 导入书籍</button>
+    </header>
+    <div class="lib-chips-row">
+      <div id="lib-chips" class="lib-chips"></div>
+    </div>
+    <div class="lib-scroll">
+      <div id="lib-grid" class="lib-grid"></div>
+      <div id="lib-empty" class="lib-empty" hidden>
+        <div class="empty-worm">❦</div>
+        <div class="empty-title"></div>
+        <div class="empty-sub dim"></div>
+      </div>
+    </div>
+    <div class="drop-hint">松开即可导入书籍（TXT / EPUB / PDF / DOCX / MOBI / MD / HTML）</div>
+  </div>
+
+  <!-- ================= 阅读器 ================= -->
+  <div id="view-reader" hidden>
+    <header class="rd-top">
+      <button id="rd-back" class="btn ghost back-btn">‹ 书架</button>
+      <div id="rd-title" class="rd-title"></div>
+      <div class="rd-tools">
+        <button id="rd-toc" class="tool" title="目录跳转">目录</button>
+        <button id="rd-search" class="tool" title="在本书中搜索 (Ctrl+F)">搜索</button>
+        <button id="rd-bilingual" class="tool" title="每段英文下方显示中文翻译">中英对照</button>
+        <button id="rd-tts" class="tool" title="系统语音朗读（默认美音）">朗读</button>
+        <button id="rd-notes" class="tool" title="笔记与书签面板">笔记</button>
+        <button id="rd-bm" class="tool bm-btn" title="在当前位置添加书签">🔖</button>
+        <button id="rd-mode" class="tool" title="切换 分页 / 连续滚动">⇄ 分页</button>
+        <button id="rd-settings" class="tool" title="显示设置">⚙</button>
+      </div>
+    </header>
+    <div class="rd-main">
+      <aside id="toc-panel" class="side-panel" hidden>
+        <div class="sp-title">目录</div>
+        <div class="toc-list"></div>
+      </aside>
+      <aside id="search-panel" class="side-panel" hidden>
+        <div class="sp-head">
+          <input id="sp-input" class="input" placeholder="在本书全文中搜索… (Enter)" autocomplete="off">
+          <button id="sp-close" class="icon-btn" title="关闭">✕</button>
+        </div>
+        <div id="sp-meta" class="sp-meta dim"></div>
+        <div id="sp-results" class="sp-results"></div>
+      </aside>
+      <div id="rd-stage">
+        <div id="page-scroll" data-theme="night">
+          <div id="page-inner"></div>
+        </div>
+      </div>
+      <aside id="notes-panel" class="side-panel right" hidden>
+        <div class="np-head"></div>
+        <div class="np-tabs"></div>
+        <div class="np-search"></div>
+        <div class="np-list"></div>
+      </aside>
+    </div>
+    <footer class="rd-bottom">
+      <span id="rd-chapter" class="rd-chapter"></span>
+      <input id="rd-slider" type="range" min="0" max="1000" value="0">
+      <span id="rd-pct" class="rd-pct"></span>
+    </footer>
+  </div>
+
+  <script src="js/pdfjs/jszip.min.js"></script>
+  <script src="js/pdfjs/pdf.min.js"></script>
+  <script src="js/pdfjs/pdf.worker.min.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/parsers.js"></script>
+  <script src="js/covers.js"></script>
+  <script src="js/library.js"></script>
+  <script src="js/reader.js"></script>
+  <script src="js/notes.js"></script>
+  <script src="js/search.js"></script>
+  <script src="js/translate.js"></script>
+  <script src="js/tts.js"></script>
+  <script src="js/bilingual.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/toc.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "name": "bookworm-reader",
+  "productName": "书虫",
+  "version": "1.2.0",
+  "description": "书虫 - 英语文献与书籍桌面阅读器",
+  "main": "main.js",
+  "author": "Dionysus",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "prepare-assets": "node scripts/prepare.js",
+    "icons": "node scripts/gen-icon.js",
+    "dist": "npm run prepare-assets && electron-builder --win portable"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "3.11.174"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.dionysus.bookworm",
+    "productName": "书虫",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*",
+      "assets/**/*"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "书虫.exe"
+    }
+  }
+}
