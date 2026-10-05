@@ -13,6 +13,22 @@
     voices: [],
 
     init() {
+      if (window.AndroidTTS) {
+        // 安卓原生 TTS 桥
+        this.native = window.AndroidTTS;
+        window.__ttsEvent = (type, id) => {
+          if (!this.active || String(id) !== String(this._token)) return;
+          if (type === 'end') {
+            this.idx++;
+            setTimeout(() => this.speakIdx(), 60);
+          }
+        };
+        $('#rd-tts').addEventListener('click', () => {
+          if (this.active) { this.showBar(); return; }
+          this.start();
+        });
+        return;
+      }
       if (!('speechSynthesis' in window)) {
         $('#rd-tts').disabled = true;
         $('#rd-tts').title = '当前环境不支持语音合成';
@@ -27,6 +43,14 @@
         if (this.active) { this.showBar(); return; }
         this.start();
       });
+    },
+
+    refreshNativeVoices() {
+      if (!this.native) return;
+      try {
+        const list = JSON.parse(this.native.getVoices() || '[]');
+        this.voices = list.map(v => ({ name: v.name, lang: v.lang || '', localService: true }));
+      } catch (e) { this.voices = []; }
     },
 
     /* ---------- 声音 ---------- */
@@ -72,9 +96,13 @@
     start() {
       const R = window.BW.Reader;
       if (!R.book) return;
-      if (!this.voices.length) this.voices = window.speechSynthesis.getVoices() || [];
+      if (this.native) {
+        this.refreshNativeVoices();
+      } else if (!this.voices.length) {
+        this.voices = window.speechSynthesis.getVoices() || [];
+      }
       const enVoice = this.resolveVoice();
-      if (!enVoice || !/^en/i.test(enVoice.lang)) {
+      if (!this.native && (!enVoice || !/^en/i.test(enVoice.lang))) {
         toast('未找到英语语音，将使用默认声音朗读', 'error');
       }
       toast('正在解析句子…');
@@ -96,12 +124,20 @@
       const R = window.BW.Reader;
       const s = this.sentences[this.idx];
       const token = ++this._token;
-      try { window.speechSynthesis.cancel(); } catch (e) {}
       if (this._spans.length) { R.unwrap('span.tts-cur'); this._spans = []; }
       this._spans = R.wrapRange(s.gStart, s.gEnd, { class: 'tts-cur' });
       R.gotoG(s.gStart, { save: false });
       R.trackPosition();
 
+      if (this.native) {
+        try { this.native.stop(); } catch (e) {}
+        const voice = this.resolveVoice();
+        const ok = this.native.speak(String(token), s.text, voice ? voice.name : '', clamp(Store.settings.ttsRate || 1, 0.5, 2));
+        if (!ok) { this.idx++; setTimeout(() => this.speakIdx(), 100); }
+        this.updateBar();
+        return;
+      }
+      try { window.speechSynthesis.cancel(); } catch (e) {}
       const u = new SpeechSynthesisUtterance(s.text);
       const voice = this.resolveVoice();
       if (voice) { u.voice = voice; u.lang = voice.lang; }
@@ -124,15 +160,26 @@
 
     pause() {
       if (!this.active || this.paused) return;
-      window.speechSynthesis.pause();
-      this.paused = true;
+      if (this.native) {
+        // 原生 TTS 无暂停: 停止当前句, 恢复时重读本句
+        try { this.native.stop(); } catch (e) {}
+        this.paused = true;
+      } else {
+        window.speechSynthesis.pause();
+        this.paused = true;
+      }
       this.updateBar();
     },
     resume() {
       if (!this.active || !this.paused) return;
-      window.speechSynthesis.resume();
-      this.paused = false;
-      this.updateBar();
+      if (this.native) {
+        this.paused = false;
+        this.speakIdx();
+      } else {
+        window.speechSynthesis.resume();
+        this.paused = false;
+        this.updateBar();
+      }
     },
     togglePause() { this.paused ? this.resume() : this.pause(); },
 
@@ -141,6 +188,7 @@
       this._token++;
       this.active = false;
       this.paused = false;
+      if (this.native) { try { this.native.stop(); } catch (e) {} }
       try { window.speechSynthesis.cancel(); } catch (e) {}
       try { window.BW.Reader.unwrap('span.tts-cur'); } catch (e) {}
       this._spans = [];
@@ -155,9 +203,15 @@
     },
 
     speakSelection(text) {
-      if (!('speechSynthesis' in window)) { toast('当前环境不支持语音合成', 'error'); return; }
       const t = String(text || '').trim();
       if (!t) return;
+      if (this.native) {
+        try { this.native.stop(); } catch (e) {}
+        const v = this.resolveVoice();
+        this.native.speak('sel' + Date.now(), t.slice(0, 1000), v ? v.name : '', clamp(Store.settings.ttsRate || 1, 0.5, 2));
+        return;
+      }
+      if (!('speechSynthesis' in window)) { toast('当前环境不支持语音合成', 'error'); return; }
       try { window.speechSynthesis.cancel(); } catch (e) {}
       const u = new SpeechSynthesisUtterance(t.slice(0, 1000));
       const v = this.resolveVoice();

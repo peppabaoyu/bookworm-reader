@@ -1,5 +1,5 @@
 'use strict';
-/* 构建准备: 把 pdfjs 的 UMD 构建复制到 app/js/pdfjs (便于 asarUnpack) */
+/* 构建准备: 复制 pdfjs/jszip 资源 + 从 package.json 生成版本文件 */
 const fs = require('fs');
 const path = require('path');
 
@@ -16,3 +16,10 @@ for (const f of ['pdf.min.js', 'pdf.worker.min.js']) {
 const jszipSrc = path.join(root, 'node_modules', 'jszip', 'dist', 'jszip.min.js');
 fs.copyFileSync(jszipSrc, path.join(destDir, 'jszip.min.js'));
 console.log('copied jszip.min.js');
+
+// 版本文件
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+fs.writeFileSync(path.join(root, 'app', 'version.js'),
+  "'use strict';\n/* 由 scripts/prepare.js 从 package.json 生成 */\nwindow.BW = window.BW || {};\nwindow.BW.APP_VERSION = '" + pkg.version + "';\n");
+console.log('version.js →', pkg.version);
+

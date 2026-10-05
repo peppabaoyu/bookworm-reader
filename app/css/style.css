@@ -517,6 +517,37 @@ body[data-view="library"] #view-reader { display: none; }
 .en-s { border-radius: 2px; }
 .en-s:hover { background: rgba(212, 162, 78, 0.1); }
 
+/* ============ 移动端适配 ============ */
+@media (max-width: 760px) {
+  .lib-top { flex-wrap: wrap; gap: 8px; padding: 10px 14px 8px; }
+  .lib-searchbox { order: 10; flex-basis: 100%; max-width: none; }
+  .brand-sub { display: none; }
+  .lib-chips-row { padding: 2px 14px 8px; }
+  .lib-scroll { padding: 14px 14px 30px; }
+  .lib-grid { grid-template-columns: repeat(auto-fill, minmax(106px, 1fr)); gap: 16px 10px; }
+
+  .rd-top { height: 46px; padding: 0 8px; gap: 6px; }
+  .rd-title { font-size: 12px; max-width: 24vw; }
+  .tool { padding: 6px 7px; font-size: 12px; }
+
+  .rd-main { position: relative; }
+  .side-panel {
+    position: absolute; top: 0; bottom: 0; left: 0; z-index: 45;
+    width: min(84vw, 320px);
+    box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
+  }
+  .side-panel.right { left: auto; right: 0; }
+
+  #update-banner { left: 12px; right: 12px; top: 10px; }
+  .rd-bottom { gap: 8px; padding: 0 10px; }
+  .rd-chapter { max-width: 26vw; font-size: 11px; }
+  .rd-pct { min-width: 70px; font-size: 11px; }
+  .sel-toolbar { max-width: 96vw; flex-wrap: wrap; }
+  .trans-pop { width: min(92vw, 360px); }
+  .tts-bar { max-width: 96vw; flex-wrap: wrap; bottom: 54px; }
+  .modal { max-height: 90vh; }
+}
+
 /* ============ Smoke/杂项 ============ */
 .cat-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 

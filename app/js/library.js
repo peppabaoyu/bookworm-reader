@@ -114,38 +114,58 @@
       const r = ev.currentTarget.getBoundingClientRect();
       showMenu(r.left, r.bottom + 4, [
         { icon: '📖', label: '打开 / 继续阅读', onclick: () => window.BW.App.openReader(b.id) },
-        { icon: '🗂', label: '设置分类', onclick: () => this.categoryDialog(b) },
+        { icon: '✏️', label: '编辑信息 / 分类', onclick: () => this.editBookDialog(b) },
         Store.getNotes(b.id).length ? { icon: '📤', label: '导出笔记 (Markdown)', onclick: () => window.BW.Notes.exportMD(b) } : null,
         '-',
         { icon: '🗑', label: '删除书籍及笔记', danger: true, onclick: () => this.confirmDelete(b) }
       ]);
     },
 
-    categoryDialog(b) {
-      const cats = this.categories();
-      const input = el('input', { class: 'input', value: b.category || '', placeholder: '输入分类名，留空为「未分类」' });
-      const list = el('div', { class: 'cat-quick' },
-        cats.map(c => el('button', {
-          class: 'chip' + (b.category === c ? ' active' : ''),
-          onclick: () => { input.value = c; }
-        }, c)));
-      openModal({
-        title: `设置分类 — ${b.title}`,
-        body: el('div', {}, el('div', { class: 'field-label' }, '分类'), input, cats.length ? el('div', { class: 'field-label', style: { marginTop: '14px' } }, '现有分类') : null, list),
-        actions: [
-          el('button', { class: 'btn ghost', onclick: () => closeModal() }, '取消'),
-          el('button', {
-            class: 'btn primary', onclick: async () => {
-              const v = input.value.trim();
-              await Store.updateBook(b.id, { category: v });
-              closeModal();
-              toast(v ? `已归入「${v}」` : '已移出分类');
-              this.render();
-            }
-          }, '保存')
-        ]
+    editBookDialog(b, afterImportMode) {
+      return new Promise((resolve) => {
+        const cats = this.categories();
+        const titleIn = el('input', { class: 'input', value: b.title || '' });
+        const authorIn = el('input', { class: 'input', value: b.author || '', placeholder: '未知作者可留空' });
+        const catIn = el('input', { class: 'input', value: b.category || '', placeholder: '输入分类名，留空为「未分类」' });
+        const list = el('div', { class: 'cat-quick' },
+          cats.map(c => el('button', {
+            class: 'chip' + (b.category === c ? ' active' : ''),
+            onclick: () => { catIn.value = c; }
+          }, c)));
+        const save = async () => {
+          const newTitle = titleIn.value.trim() || b.title;
+          const patch = {
+            title: newTitle,
+            author: authorIn.value.trim(),
+            category: catIn.value.trim()
+          };
+          // 程序生成的封面跟随书名/作者重绘
+          if (b.coverGen && (patch.title !== b.title || patch.author !== b.author)) {
+            patch.cover = window.BW.Covers.genCover(patch.title, patch.author, b.format);
+          }
+          await Store.updateBook(b.id, patch);
+          Object.assign(b, patch);
+          closeModal();
+          this.render();
+          if (window.BW.Reader.book && window.BW.Reader.book.id === b.id) {
+            $('#rd-title').textContent = patch.title;
+          }
+          resolve();
+        };
+        openModal({
+          title: (afterImportMode ? '导入成功，编辑这本书 — ' : '编辑信息 — ') + String(b.title).slice(0, 18),
+          body: el('div', {},
+            el('div', { class: 'field-label' }, '书名'), titleIn,
+            el('div', { class: 'field-label' }, '作者'), authorIn,
+            el('div', { class: 'field-label' }, '分类'), catIn,
+            cats.length ? el('div', { class: 'field-label' }, '现有分类') : null, list),
+          actions: [
+            el('button', { class: 'btn ghost', onclick: () => { closeModal(); resolve(); } }, afterImportMode ? '跳过' : '取消'),
+            el('button', { class: 'btn primary', onclick: save }, '保存')
+          ]
+        });
+        setTimeout(() => { catIn.focus(); }, 80);
       });
-      setTimeout(() => { input.focus(); input.select(); }, 50);
     },
 
     confirmDelete(b) {
@@ -171,6 +191,31 @@
   };
 
   /* ---------- 导入 ---------- */
+  async function importOne(entry) {
+    const buf = entry.buf || await window.bw.readBookFile(entry.absPath);
+    const parsed = await window.BW.Parsers.parseBuffer(buf, entry.ext, entry.name);
+    let cover = parsed.cover || '';
+    if (cover) { try { cover = await window.BW.Parsers.downscaleCover(cover); } catch (e) {} }
+    const meta = {
+      id: entry.id,
+      title: parsed.title || window.BW.Parsers.cleanName(entry.name),
+      author: parsed.author || '',
+      format: parsed.format,
+      category: '',
+      cover,
+      coverGen: !parsed.cover,   // 封面是否为程序生成(改名后需要重绘)
+      addedAt: Date.now(),
+      lastReadAt: 0,
+      progress: null,
+      wordCount: parsed.wordCount || 0,
+      chapterCount: parsed.chapterCount || 0
+    };
+    if (!meta.cover) meta.cover = window.BW.Covers.genCover(meta.title, meta.author, meta.format);
+    await window.bw.writeBookData(entry.id, 'content.json', JSON.stringify({ format: parsed.format, chapters: parsed.chapters }));
+    await Store.addBook(meta);
+    return meta;
+  }
+
   async function importFromPaths(paths, opts) {
     if (!paths || !paths.length) return [];
     const created = [];
@@ -181,26 +226,7 @@
         const entries = await window.bw.importFiles([p]);
         const entry = entries && entries[0];
         if (!entry || entry.error) throw new Error((entry && entry.error) || '导入失败');
-        const parsed = await window.BW.Parsers.parseFile(entry);
-        let cover = parsed.cover || '';
-        if (cover) { try { cover = await window.BW.Parsers.downscaleCover(cover); } catch (e) {} }
-        if (!cover) cover = window.BW.Covers.genCover(parsed.title, parsed.author, parsed.format);
-        const meta = {
-          id: entry.id,
-          title: parsed.title || window.BW.Parsers.cleanName(entry.name),
-          author: parsed.author || '',
-          format: parsed.format,
-          category: '',
-          cover,
-          addedAt: Date.now(),
-          lastReadAt: 0,
-          progress: null,
-          wordCount: parsed.wordCount || 0,
-          chapterCount: parsed.chapterCount || 0
-        };
-        await window.bw.writeBookData(entry.id, 'content.json', JSON.stringify({ format: parsed.format, chapters: parsed.chapters }));
-        await Store.addBook(meta);
-        created.push(meta);
+        created.push(await importOne({ id: entry.id, absPath: entry.absPath, name: entry.name, ext: entry.ext }));
       } catch (err) {
         fail++;
         console.error('导入失败:', p, err);
@@ -209,7 +235,47 @@
     }
     if (created.length) toast(`成功导入 ${created.length} 本${fail ? `，${fail} 本失败` : ''}`);
     Lib.render();
+    await afterImport(created, opts);
     return created;
+  }
+
+  /* 网页 / 安卓: 从浏览器 File 对象导入 */
+  async function importFromFiles(files, opts) {
+    if (!files || !files.length) return [];
+    const created = [];
+    let fail = 0;
+    toast(`开始导入 ${files.length} 个文件…`);
+    for (const f of files) {
+      try {
+        const ext = (f.name.match(/\.([a-z0-9]+)$/i) || [])[1] || '';
+        if (!['txt', 'epub', 'pdf', 'docx', 'mobi', 'azw', 'azw3', 'md', 'markdown', 'html', 'htm'].includes(ext.toLowerCase())) {
+          throw new Error('不支持的格式: .' + ext);
+        }
+        const id = 'bk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const buf = new Uint8Array(await f.arrayBuffer());
+        created.push(await importOne({ id, buf, ext: ext.toLowerCase(), name: f.name }));
+      } catch (err) {
+        fail++;
+        console.error('导入失败:', f.name, err);
+        toast(`导入失败: ${(err && err.message) || err}`, 'error');
+      }
+    }
+    if (created.length) toast(`成功导入 ${created.length} 本${fail ? `，${fail} 本失败` : ''}`);
+    Lib.render();
+    await afterImport(created, opts);
+    return created;
+  }
+
+  /* 导入完成后逐本弹出信息编辑 */
+  async function afterImport(created, opts) {
+    if (!created || !created.length) return;
+    if (opts && opts.skipEdit) return;
+    let rest = created.slice();
+    while (rest.length) {
+      const b = rest[0];
+      rest = rest.slice(1);
+      await Lib.editBookDialog(b, true);
+    }
   }
 
   function init() {
@@ -220,7 +286,9 @@
 
     $('#btn-import').addEventListener('click', async () => {
       const r = await window.bw.selectAndImport();
-      if (!r.canceled) importFromPaths(r.paths);
+      if (r.canceled) return;
+      if (r.files && r.files.length) window.BW.importFromFiles(r.files);
+      else if (r.paths && r.paths.length) window.BW.importFromPaths(r.paths);
     });
     $('#lib-sort').addEventListener('change', (e) => { Lib.sort = e.target.value; Lib.render(); });
 
@@ -236,12 +304,19 @@
     document.addEventListener('dragover', (e) => e.preventDefault());
     document.addEventListener('drop', async (e) => {
       e.preventDefault(); dragDepth = 0; root.classList.remove('dragging');
-      const paths = Array.from(e.dataTransfer.files || []).map(f => window.bw.pathForFile(f)).filter(Boolean);
-      if (paths.length) importFromPaths(paths);
+      const files = Array.from(e.dataTransfer.files || []);
+      if (!files.length) return;
+      if (window.BW.PLATFORM === 'electron') {
+        const paths = files.map(f => window.bw.pathForFile(f)).filter(Boolean);
+        if (paths.length) importFromPaths(paths);
+      } else {
+        window.BW.importFromFiles(files);
+      }
     });
   }
 
   window.BW.Lib = Lib;
   window.BW.importFromPaths = importFromPaths;
+  window.BW.importFromFiles = importFromFiles;
   window.BW.LibInit = init;
 })();

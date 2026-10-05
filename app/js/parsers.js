@@ -643,16 +643,20 @@
   /* ---------- 入口 ---------- */
   async function parseFile(entry) {
     const buf = await window.bw.readBookFile(entry.absPath);
+    return parseBuffer(buf, entry.ext, entry.name);
+  }
+
+  async function parseBuffer(buf, ext, name) {
     let parsed;
-    switch (entry.ext) {
-      case 'txt': parsed = parseTxt(buf, entry.name); break;
-      case 'epub': parsed = await parseEpub(buf, entry.name); break;
-      case 'pdf': parsed = await parsePdf(buf, entry.name); break;
-      case 'docx': parsed = await parseDocx(buf, entry.name); break;
-      case 'mobi': case 'azw': case 'azw3': parsed = await parseMobi(buf, entry.name); break;
-      case 'md': case 'markdown': parsed = parseMd(buf, entry.name); break;
-      case 'html': case 'htm': parsed = parseHtmlFile(buf, entry.name); break;
-      default: throw new Error('不支持的格式: ' + entry.ext);
+    switch (ext) {
+      case 'txt': parsed = parseTxt(buf, name); break;
+      case 'epub': parsed = await parseEpub(buf, name); break;
+      case 'pdf': parsed = await parsePdf(buf, name); break;
+      case 'docx': parsed = await parseDocx(buf, name); break;
+      case 'mobi': case 'azw': case 'azw3': parsed = await parseMobi(buf, name); break;
+      case 'md': case 'markdown': parsed = parseMd(buf, name); break;
+      case 'html': case 'htm': parsed = parseHtmlFile(buf, name); break;
+      default: throw new Error('不支持的格式: ' + ext);
     }
     // 重名书籍标题去重信息
     const words = parsed.chapters.reduce((acc, c) => {
@@ -686,5 +690,5 @@
     });
   }
 
-  window.BW.Parsers = { parseFile, downscaleCover, decodeText, cleanName };
+  window.BW.Parsers = { parseFile, parseBuffer, downscaleCover, decodeText, cleanName };
 })();

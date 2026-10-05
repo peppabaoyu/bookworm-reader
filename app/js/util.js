@@ -37,6 +37,16 @@
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+  function gtVersion(a, b) {
+    const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+    const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) > (pb[i] || 0)) return true;
+      if ((pa[i] || 0) < (pb[i] || 0)) return false;
+    }
+    return false;
+  }
+
   function fmtTime(ts) {
     if (!ts) return '';
     const d = new Date(ts);
@@ -101,5 +111,5 @@
   document.addEventListener('mousedown', (e) => { if (ctxMenu && !ctxMenu.contains(e.target)) hideMenu(); });
 
   window.BW = window.BW || {};
-  Object.assign(window.BW, { $, $$, el, escapeHtml, debounce, uuid, clamp, fmtTime, fmtNow, toast, openModal, closeModal, modalOpen, showMenu, hideMenu });
+  Object.assign(window.BW, { $, $$, el, escapeHtml, debounce, uuid, clamp, gtVersion, fmtTime, fmtNow, toast, openModal, closeModal, modalOpen, showMenu, hideMenu });
 })();

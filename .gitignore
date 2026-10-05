@@ -4,3 +4,9 @@ shots/
 *.log
 .DS_Store
 Thumbs.db
+.github-token
+.android-tools/
+android/build/
+android/assets/
+android/res/drawable/icon.png
+android/debug.keystore

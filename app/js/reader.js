@@ -444,7 +444,7 @@
         if (e.clientX - r.left < r.width / 2) this.prevPage(); else this.nextPage();
       });
 
-      // 双击词语 → 播放标准读音
+      // 双击词语 → 播放标准读音 + 中文翻译
       scroll.addEventListener('dblclick', (e) => {
         setTimeout(() => {
           const sel = window.getSelection();
@@ -453,6 +453,9 @@
           if (m && m[0].length > 0 && m[0].length <= 40) {
             window.BW.Annotate._suppressToolbarOnce = true;
             window.BW.TTS.speakSelection(m[0]);
+            let rect = null;
+            try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (err) {}
+            window.BW.Trans.show(m[0], rect && rect.width ? rect : { left: e.clientX, top: e.clientY, width: 0, height: 0 });
           }
         }, 10);
       });

@@ -22,10 +22,12 @@
       // 启动后静默检查一次更新
       setTimeout(() => this.checkUpdate(false), 8000);
 
-      // smoke 测试
+      // smoke / webtest
       const params = new URLSearchParams(location.search);
       if (params.get('smoke') === '1') {
         setTimeout(() => runSmoke(), 700);
+      } else if (params.get('webtest') === '1') {
+        setTimeout(() => runWebTest(), 700);
       }
     },
 
@@ -152,7 +154,7 @@
     let imported = [];
     await step('导入样例 (5 格式)', async () => {
       const s = await window.bw.getSmokeSamples();
-      imported = await window.BW.importFromPaths([s.txtPath, s.epubPath, s.pdfPath, s.docxPath, s.mobiPath]);
+      imported = await window.BW.importFromPaths([s.txtPath, s.epubPath, s.pdfPath, s.docxPath, s.mobiPath], { skipEdit: true });
       assert(imported.length === 5, `导入成功 ${imported.length}/5`);
       const fmts = imported.map(b => b.format).sort().join(',');
       assert(fmts === 'docx,epub,mobi,pdf,txt', '格式集合异常: ' + fmts);
@@ -320,6 +322,97 @@
     });
 
     await window.bw.smokeResult({ ok: errors.length === 0, results, errors });
+  }
+
+  /* ================= Web/安卓 shim 测试 ================= */
+  async function runWebTest() {
+    const results = [];
+    const errors = [];
+    const step = async (name, fn) => {
+      try {
+        const r = await fn();
+        results.push({ name, ok: true, info: r === undefined ? '' : String(r).slice(0, 120) });
+      } catch (e) {
+        results.push({ name, ok: false, info: String(e && e.message || e).slice(0, 200) });
+        errors.push(name + ': ' + (e && e.message || e));
+      }
+    };
+    const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+    const delay = ms => new Promise(r => setTimeout(r, ms));
+    const R = window.BW.Reader;
+    let imported = [];
+
+    await step('平台识别与 shim', async () => {
+      assert(window.BW.PLATFORM === 'web', 'PLATFORM=' + window.BW.PLATFORM);
+      assert(window.bw && window.bw.saveStore && window.bw.translate, 'bw shim 不完整');
+      return 'platform=' + window.BW.PLATFORM;
+    });
+
+    await step('IndexedDB 存储', async () => {
+      await window.bw.saveStore('wt.json', { a: 1, list: [1, 2, 3] });
+      const v = await window.bw.loadStore('wt.json');
+      assert(v && v.a === 1 && v.list.length === 3, 'kv roundtrip 失败');
+      return 'ok';
+    });
+
+    await step('Web 导入', async () => {
+      assert(window.__WEBTEST_TXT, '样例未注入');
+      const bin = atob(window.__WEBTEST_TXT);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const file = new File([u8], 'web-sample.txt', { type: 'text/plain' });
+      imported = await window.BW.importFromFiles([file], { skipEdit: true });
+      assert(imported.length === 1 && imported[0].chapterCount >= 2, '导入: ' + JSON.stringify(imported.map(b => b.title)));
+      return imported[0].title + '(' + imported[0].chapterCount + '章)';
+    });
+
+    await step('Web 阅读器', async () => {
+      await R.open(imported[0].id);
+      await delay(600);
+      assert(!R.view.hidden && R.pages >= 1, '分页失败 pages=' + R.pages);
+      R.nextPage();
+      const g = R.currentG();
+      assert(typeof g === 'number' && g >= 0, 'currentG 失败');
+      R.gotoG(0, { save: false });
+      return 'pages=' + R.pages;
+    });
+
+    await step('搜索与批注', async () => {
+      window.BW.Search.open();
+      window.BW.Search.run('the');
+      await delay(150);
+      assert(window.BW.Search.results.length > 0, '搜索无结果');
+      window.BW.Search.close();
+      const A = window.BW.Annotate;
+      const text = R.getFullText();
+      const g1 = text.indexOf('the');
+      A.sel = { g1, g2: g1 + 10, text: text.slice(g1, g1 + 10), rect: { left: 100, top: 100 }, plain: '' };
+      await A.quickAdd('#f7dc6f', 'hl');
+      assert(Store.getNotes(imported[0].id).length === 1, '批注未入库');
+      return 'ok';
+    });
+
+    await step('Web 翻译直连', async () => {
+      const r = await window.bw.translate(['hello world'], {});
+      assert(r.results[0] && r.results[0].trim(), '翻译为空');
+      return r.provider + ': ' + r.results[0];
+    });
+
+    await step('朗读句子解析', async () => {
+      const ss = R.buildSentences();
+      assert(ss.length > 5, '句子数: ' + ss.length);
+      return ss.length + ' 句';
+    });
+
+    await step('删除清理', async () => {
+      R.close();
+      await delay(150);
+      await Store.removeBook(imported[0].id);
+      assert(window.BW.Lib.visibleBooks().length === 0, '删除失败');
+      return 'ok';
+    });
+
+    console.log('SMOKE_JSON:' + JSON.stringify({ ok: errors.length === 0, results, errors }));
   }
 
   window.BW.App = App;

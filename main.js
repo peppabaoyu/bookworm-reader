@@ -7,7 +7,8 @@ const os = require('os');
 
 const SMOKE = process.argv.includes('--smoke');
 const SHOT = process.argv.includes('--shot');
-if (SMOKE || SHOT) {
+const WEBTEST = process.argv.includes('--webtest');
+if (SMOKE || SHOT || WEBTEST) {
   app.setPath('userData', path.join(os.tmpdir(), 'bookworm-smoke-' + Date.now()));
 }
 
@@ -51,7 +52,7 @@ function createWindow() {
     title: '书虫',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: WEBTEST ? undefined : path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -60,14 +61,32 @@ function createWindow() {
   });
   if (st.maximized) win.maximize();
 
-  win.once('ready-to-show', () => { win.show(); if (SHOT) runShot(win); });
-  win.loadFile(path.join(__dirname, 'app', 'index.html'), SMOKE ? { query: { smoke: '1' } } : undefined);
+  win.once('ready-to-show', () => {
+    win.show();
+    if (SHOT) runShot(win);
+    if (WEBTEST) {
+      try {
+        const txt = fs.readFileSync(path.join(__dirname, 'assets', 'samples', 'sample-en.txt'));
+        win.webContents.executeJavaScript('window.__WEBTEST_TXT = ' + JSON.stringify(txt.toString('base64')) + '; true;');
+      } catch (e) {}
+    }
+  });
+  const query = SMOKE ? { smoke: '1' } : (WEBTEST ? { webtest: '1' } : undefined);
+  win.loadFile(path.join(__dirname, 'app', 'index.html'), query ? { query } : undefined);
 
   win.webContents.on('console-message', (...args) => {
     let level, message;
     if (typeof args[0] === 'object' && args[0] && 'message' in args[0]) { level = args[0].level; message = args[0].message; }
     else { level = args[1]; message = args[2]; }
-    if (SMOKE && level >= 2) smokeConsoleErrors.push(String(message).slice(0, 500));
+    if ((SMOKE || WEBTEST) && level >= 2) smokeConsoleErrors.push(String(message).slice(0, 500));
+    if (WEBTEST && message && String(message).startsWith('SMOKE_JSON:')) {
+      const outArg = process.argv.find(a => a.startsWith('--smoke-out='));
+      const line = String(message);
+      if (outArg) { try { fs.writeFileSync(outArg.slice('--smoke-out='.length), line); } catch (e) {} }
+      else console.log(line);
+      const ok = /"ok":true/.test(line);
+      setTimeout(() => app.exit(ok ? 0 : 1), 300);
+    }
   });
 
   win.webContents.on('before-input-event', (e, input) => {
