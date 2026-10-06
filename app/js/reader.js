@@ -424,76 +424,57 @@
       if (this._bound) return;
       this._bound = true;
       const scroll = this.scroll;
-      let downX = 0, downY = 0, downT = 0;
-      let lastClickAt = 0, lastClickX = 0, lastClickY = 0;
       const isTouch = ('ontouchstart' in window) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
       this._isTouch = isTouch;
 
-      scroll.addEventListener('mousedown', (e) => { downX = e.clientX; downY = e.clientY; downT = Date.now(); });
+      /* 翻页方式: 电脑 = 滚轮 / PageUp·PageDown / ←→ / 空格; 手机 = 滑动
+         点击不再翻页 —— 双击查词与点击翻页彻底解耦 */
 
-      scroll.addEventListener('click', (e) => {
-        if (this.mode !== 'paged') return;
-        // 手机端: 点击不翻页 (避免与双击查词冲突), 翻页只靠滑动
-        if (isTouch) return;
-        const sel = window.getSelection();
-        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
-        if (Math.abs(e.clientX - downX) > 6 || Math.abs(e.clientY - downY) > 6) return;
-        if (window.BW.modalOpen()) return;
-        // 双击(读词)的第二下 click 不翻页
-        const now = Date.now();
-        const isDbl = now - lastClickAt < 350 &&
-          Math.abs(e.clientX - lastClickX) < 14 && Math.abs(e.clientY - lastClickY) < 14;
-        lastClickAt = now; lastClickX = e.clientX; lastClickY = e.clientY;
-        if (isDbl) return;
-        const r = scroll.getBoundingClientRect();
-        if (e.clientX - r.left < r.width / 2) this.prevPage(); else this.nextPage();
-      });
-
-      /* ---------- 手机端触摸手势: 滑动一次翻一页 (跟手 + 回弹) ---------- */
-      let tsX = 0, tsY = 0, tsT = 0, swiping = null, swBase = 0;
+      /* ---------- 手机端触摸手势: 滑动一次翻一页 (跟手 + 回弹), 轻点双击查词 ---------- */
+      let tsX = 0, tsY = 0, tsT = 0, swiping = false, swBase = 0;
       let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
       scroll.addEventListener('touchstart', (e) => {
-        if (this.mode !== 'paged') return;
         tsX = e.touches[0].clientX; tsY = e.touches[0].clientY;
-        tsT = Date.now(); swiping = null;
+        tsT = Date.now(); swiping = false;
         swBase = scroll.scrollLeft;
       }, { passive: true });
 
       scroll.addEventListener('touchmove', (e) => {
-        if (this.mode !== 'paged') return;
         const dx = e.touches[0].clientX - tsX;
         const dy = e.touches[0].clientY - tsY;
-        if (swiping === null && (Math.abs(dx) > 14 || Math.abs(dy) > 14)) {
-          // 水平位移占主导 → 判定为翻页滑动, 接管触摸
-          swiping = Math.abs(dx) > Math.abs(dy) + 6;
-        }
-        if (swiping) {
-          e.preventDefault();
-          const max = Math.max(0, (this.pages - 1) * this.pageStride);
-          scroll.scrollLeft = clamp(swBase - dx, 0, max);
+        if (this.mode === 'paged') {
+          if (!swiping && Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy) + 6) swiping = true;
+          if (swiping) {
+            e.preventDefault();
+            const max = Math.max(0, (this.pages - 1) * this.pageStride);
+            scroll.scrollLeft = clamp(swBase - dx, 0, max);
+          }
         }
       }, { passive: false });
 
       scroll.addEventListener('touchend', (e) => {
-        if (this.mode !== 'paged') { swiping = null; return; }
-        if (swiping === true) {
-          const dx = e.changedTouches[0].clientX - tsX;
-          const dt = Date.now() - tsT;
+        const t = e.changedTouches[0];
+        const now = Date.now();
+        // 1) 滑动翻页 (仅分页模式)
+        if (this.mode === 'paged' && swiping) {
+          const dx = t.clientX - tsX;
+          const dt = now - tsT;
           if (dx < -50 && dt < 1200) this.nextPage();
           else if (dx > 50 && dt < 1200) this.prevPage();
           else scroll.scrollLeft = this.page * this.pageStride;   // 回弹
-          swiping = null;
+          swiping = false;
+          lastTapAt = 0;   // 滑动不算轻点
           return;
         }
-        // 轻点: 手动双击检测 → 查词 (比依赖 WebView 的 dblclick 事件更可靠)
-        const t = e.changedTouches[0];
-        const now = Date.now();
-        const moved = Math.hypot(t.clientX - downX, t.clientY - downY);
-        if (now - lastTapAt < 320 && Math.abs(t.clientX - lastTapX) < 44 && Math.abs(t.clientY - lastTapY) < 44 && moved < 14) {
+        // 2) 轻点双击检测 (分页/滚动模式都可用)
+        const drag = Math.hypot(t.clientX - tsX, t.clientY - tsY);
+        if (drag < 14 && now - lastTapAt < 400 && Math.abs(t.clientX - lastTapX) < 48 && Math.abs(t.clientY - lastTapY) < 48) {
           lastTapAt = 0;
           this._doubleTapLookup(t.clientX, t.clientY);
-        } else {
+        } else if (drag < 14) {
           lastTapAt = now; lastTapX = t.clientX; lastTapY = t.clientY;
+        } else {
+          lastTapAt = 0;
         }
       });
 
@@ -509,9 +490,10 @@
         if (d > 0) this.nextPage(); else this.prevPage();
       }, { passive: false });
 
-      // 双击词语 → 播放标准读音 + 牛津式查词卡 (电脑端; 手机端由触摸双击检测接管)
+      // 双击词语 → 播放标准读音 + 牛津式查词卡 (电脑主通道; 手机端作为触摸检测的兜底)
       scroll.addEventListener('dblclick', (e) => {
-        if (isTouch) return;
+        const now = Date.now();
+        if (isTouch && now - (this._lastLookupAt || 0) < 700) return;   // 触摸手动检测已处理
         setTimeout(() => {
           const sel = window.getSelection();
           const raw = sel ? sel.toString() : '';
@@ -519,6 +501,7 @@
           if (m && m[0].length > 0 && m[0].length <= 40) {
             window.BW.Annotate._suppressToolbarOnce = true;
             window.BW.TTS.speakSelection(m[0]);
+            this._lastLookupAt = Date.now();
             let rect = null, sentence = '';
             try {
               const range = sel.getRangeAt(0);
@@ -652,6 +635,9 @@
 
     /* 手机端双击: 播放读音 + 牛津式查词卡 */
     _doubleTapLookup(x, y) {
+      const now = Date.now();
+      if (now - (this._lastLookupAt || 0) < 350) return;   // 防重复触发
+      this._lastLookupAt = now;
       setTimeout(() => {
         try {
           const r = document.caretRangeFromPoint(x, y);
@@ -668,6 +654,7 @@
           if (!word) return;
           window.BW.Annotate._suppressToolbarOnce = true;
           window.BW.TTS.speakSelection(word);
+          this._lastLookupAt = Date.now();
           let sentence = '';
           try {
             const g = this.gOfNode(r.startContainer, r.startOffset);

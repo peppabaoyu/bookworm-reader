@@ -303,6 +303,51 @@
       return 'v' + v;
     });
 
+    await step('双击查词卡', async () => {
+      await R.open(txtBook.id);
+      await delay(450);
+      // 找一个可见的英文单词位置
+      const pos = (() => {
+        const walker = document.createTreeWalker(R.inner, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = walker.nextNode())) {
+          const w = (n.data.match(/[A-Za-z]{4,}/) || [])[0];
+          if (!w) continue;
+          const r2 = document.createRange();
+          const wi = n.data.indexOf(w);
+          r2.setStart(n, wi); r2.setEnd(n, wi + w.length);
+          const rect = r2.getBoundingClientRect();
+          if (rect.top > 70 && rect.top < window.innerHeight - 90 && rect.left > 10) {
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, word: w };
+          }
+        }
+        return null;
+      })();
+      assert(pos, '未找到测试单词位置');
+      await window.BW.Dictionary.ensure();
+      R._doubleTapLookup(pos.x, pos.y);
+      await delay(600);
+      const pop = document.querySelector('.dict-pop, .trans-pop');
+      assert(pop, '双击后查词卡未出现');
+      window.BW.Trans.hide();
+      return pos.word;
+    });
+
+    await step('点击不再翻页', async () => {
+      R.gotoPage(1);
+      await delay(100);
+      const p0 = R.page;
+      const rect = R.scroll.getBoundingClientRect();
+      R.scroll.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, clientX: rect.left + rect.width * 0.8, clientY: rect.top + rect.height / 2
+      }));
+      await delay(120);
+      assert(R.page === p0, '点击仍然翻页, 应已移除该行为');
+      R.nextPage();
+      assert(R.page === p0 + 1, 'nextPage 异常');
+      return 'ok';
+    });
+
     await step('打开 DOCX / MOBI', async () => {
       const docx = imported.find(b => b.format === 'docx');
       const mobi = imported.find(b => b.format === 'mobi');
