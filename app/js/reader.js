@@ -426,11 +426,15 @@
       const scroll = this.scroll;
       let downX = 0, downY = 0, downT = 0;
       let lastClickAt = 0, lastClickX = 0, lastClickY = 0;
+      const isTouch = ('ontouchstart' in window) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+      this._isTouch = isTouch;
 
       scroll.addEventListener('mousedown', (e) => { downX = e.clientX; downY = e.clientY; downT = Date.now(); });
 
       scroll.addEventListener('click', (e) => {
         if (this.mode !== 'paged') return;
+        // 手机端: 点击不翻页 (避免与双击查词冲突), 翻页只靠滑动
+        if (isTouch) return;
         const sel = window.getSelection();
         if (sel && !sel.isCollapsed && sel.toString().trim()) return;
         if (Math.abs(e.clientX - downX) > 6 || Math.abs(e.clientY - downY) > 6) return;
@@ -445,8 +449,69 @@
         if (e.clientX - r.left < r.width / 2) this.prevPage(); else this.nextPage();
       });
 
-      // 双击词语 → 播放标准读音 + 牛津式查词卡 (音标/释义/例句/同义词/形近词)
+      /* ---------- 手机端触摸手势: 滑动一次翻一页 (跟手 + 回弹) ---------- */
+      let tsX = 0, tsY = 0, tsT = 0, swiping = null, swBase = 0;
+      let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+      scroll.addEventListener('touchstart', (e) => {
+        if (this.mode !== 'paged') return;
+        tsX = e.touches[0].clientX; tsY = e.touches[0].clientY;
+        tsT = Date.now(); swiping = null;
+        swBase = scroll.scrollLeft;
+      }, { passive: true });
+
+      scroll.addEventListener('touchmove', (e) => {
+        if (this.mode !== 'paged') return;
+        const dx = e.touches[0].clientX - tsX;
+        const dy = e.touches[0].clientY - tsY;
+        if (swiping === null && (Math.abs(dx) > 14 || Math.abs(dy) > 14)) {
+          // 水平位移占主导 → 判定为翻页滑动, 接管触摸
+          swiping = Math.abs(dx) > Math.abs(dy) + 6;
+        }
+        if (swiping) {
+          e.preventDefault();
+          const max = Math.max(0, (this.pages - 1) * this.pageStride);
+          scroll.scrollLeft = clamp(swBase - dx, 0, max);
+        }
+      }, { passive: false });
+
+      scroll.addEventListener('touchend', (e) => {
+        if (this.mode !== 'paged') { swiping = null; return; }
+        if (swiping === true) {
+          const dx = e.changedTouches[0].clientX - tsX;
+          const dt = Date.now() - tsT;
+          if (dx < -50 && dt < 1200) this.nextPage();
+          else if (dx > 50 && dt < 1200) this.prevPage();
+          else scroll.scrollLeft = this.page * this.pageStride;   // 回弹
+          swiping = null;
+          return;
+        }
+        // 轻点: 手动双击检测 → 查词 (比依赖 WebView 的 dblclick 事件更可靠)
+        const t = e.changedTouches[0];
+        const now = Date.now();
+        const moved = Math.hypot(t.clientX - downX, t.clientY - downY);
+        if (now - lastTapAt < 320 && Math.abs(t.clientX - lastTapX) < 44 && Math.abs(t.clientY - lastTapY) < 44 && moved < 14) {
+          lastTapAt = 0;
+          this._doubleTapLookup(t.clientX, t.clientY);
+        } else {
+          lastTapAt = now; lastTapX = t.clientX; lastTapY = t.clientY;
+        }
+      });
+
+      /* 电脑端滚轮: 分页模式一格滚轮翻一页 (连续滚动模式保持原生滚动) */
+      scroll.addEventListener('wheel', (e) => {
+        if (this.mode !== 'paged' || isTouch) return;
+        if (Math.abs(e.deltaY) < 12 && Math.abs(e.deltaX) < 12) return;
+        e.preventDefault();
+        const now = Date.now();
+        if (now - (this._wheelAt || 0) < 380) return;   // 惯性节流: 一次手势只翻一页
+        this._wheelAt = now;
+        const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        if (d > 0) this.nextPage(); else this.prevPage();
+      }, { passive: false });
+
+      // 双击词语 → 播放标准读音 + 牛津式查词卡 (电脑端; 手机端由触摸双击检测接管)
       scroll.addEventListener('dblclick', (e) => {
+        if (isTouch) return;
         setTimeout(() => {
           const sel = window.getSelection();
           const raw = sel ? sel.toString() : '';
@@ -514,7 +579,7 @@
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         switch (e.key) {
-          case 'ArrowRight': case 'PageDown':
+          case 'ArrowRight': case 'PageDown': case ' ':
             e.preventDefault();
             if (this.mode === 'paged') this.nextPage(); else this.scrollByViewport(1);
             break;
@@ -583,6 +648,34 @@
         }
       }
       return out;
+    },
+
+    /* 手机端双击: 播放读音 + 牛津式查词卡 */
+    _doubleTapLookup(x, y) {
+      setTimeout(() => {
+        try {
+          const r = document.caretRangeFromPoint(x, y);
+          if (!r || !this.inner.contains(r.startContainer)) return;
+          let word = null;
+          if (r.startContainer.nodeType === 3) {
+            const text = r.startContainer.data;
+            let start = r.startOffset, end = r.startOffset;
+            while (start > 0 && /[A-Za-z'’-]/.test(text[start - 1])) start--;
+            while (end < text.length && /[A-Za-z'’-]/.test(text[end])) end++;
+            const w = text.slice(start, end).replace(/^[’'-]+|[’'-]+$/g, '');
+            if (/^[A-Za-z][A-Za-z'’-]*$/.test(w)) word = w;
+          }
+          if (!word) return;
+          window.BW.Annotate._suppressToolbarOnce = true;
+          window.BW.TTS.speakSelection(word);
+          let sentence = '';
+          try {
+            const g = this.gOfNode(r.startContainer, r.startOffset);
+            if (g !== null) sentence = this.sentenceAtG(g);
+          } catch (e) {}
+          window.BW.Trans.show(word, { left: x - 40, top: y, width: 80, height: 20 }, { sentence });
+        } catch (e) {}
+      }, 20);
     },
 
     getFullText() {
