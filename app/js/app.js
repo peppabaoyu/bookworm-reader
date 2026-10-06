@@ -289,6 +289,26 @@
       return `${ss.length} 句, 系统 voices=${voices.length}`;
     });
 
+    await step('键盘翻页', async () => {
+      R.gotoPage(1);
+      await delay(80);
+      const p0 = R.page;
+      const kd = (key, code) => document.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true }));
+      kd('PageDown', 'PageDown'); await delay(80);
+      assert(R.page === p0 + 1, 'PageDown 未翻页: page=' + R.page);
+      kd('ArrowLeft', 'ArrowLeft'); await delay(80);
+      assert(R.page === p0, 'ArrowLeft 未返回: page=' + R.page);
+      kd(' ', 'Space'); await delay(80);
+      assert(R.page === p0 + 1, '空格未翻页: page=' + R.page);
+      kd('PageUp', 'PageUp'); await delay(80);
+      assert(R.page === p0, 'PageUp 未返回: page=' + R.page);
+      $('#rd-next').click(); await delay(80);
+      assert(R.page === p0 + 1, '▶ 按钮未翻页');
+      $('#rd-prev').click(); await delay(80);
+      assert(R.page === p0, '◀ 按钮未返回');
+      return 'ok';
+    });
+
     await step('内置离线翻译', async () => {
       const r = await window.bw.translate(['The river ran below the road.'], {});
       assert(r.results[0] && r.results[0].trim(), '翻译为空');

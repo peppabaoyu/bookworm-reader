@@ -430,53 +430,66 @@
       /* 翻页方式: 电脑 = 滚轮 / PageUp·PageDown / ←→ / 空格; 手机 = 滑动
          点击不再翻页 —— 双击查词与点击翻页彻底解耦 */
 
-      /* ---------- 手机端触摸手势: 滑动一次翻一页 (跟手 + 回弹), 轻点双击查词 ---------- */
-      let tsX = 0, tsY = 0, tsT = 0, swiping = false, swBase = 0;
+      /* ---------- 手机端触摸手势 ----------
+         滑动一次翻一页 (页面位置不做拖跟, 永远对齐页边界, 不会卡在两页之间)
+         长按单词 = 播放读音 + 牛津式查词卡 (比双击可靠) ---------- */
+      let tsX = 0, tsY = 0, tsT = 0, swiping = false;
+      let lpTimer = 0, lpFired = false;
       let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+      const clearLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = 0; } };
+
       scroll.addEventListener('touchstart', (e) => {
         tsX = e.touches[0].clientX; tsY = e.touches[0].clientY;
-        tsT = Date.now(); swiping = false;
-        swBase = scroll.scrollLeft;
+        tsT = Date.now(); swiping = false; lpFired = false;
+        clearLp();
+        lpTimer = setTimeout(() => {
+          lpFired = true;
+          try { if (navigator.vibrate) navigator.vibrate(30); } catch (err) {}
+          this._doubleTapLookup(tsX, tsY);   // 长按 → 查词
+        }, 550);
       }, { passive: true });
 
       scroll.addEventListener('touchmove', (e) => {
         const dx = e.touches[0].clientX - tsX;
         const dy = e.touches[0].clientY - tsY;
+        if (!lpFired && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) clearLp();   // 移动即取消长按
         if (this.mode === 'paged') {
-          if (!swiping && Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy) + 6) swiping = true;
-          if (swiping) {
-            e.preventDefault();
-            const max = Math.max(0, (this.pages - 1) * this.pageStride);
-            scroll.scrollLeft = clamp(swBase - dx, 0, max);
-          }
+          if (!swiping && Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy) + 6) swiping = true;
+          if (swiping) e.preventDefault();
         }
       }, { passive: false });
 
-      scroll.addEventListener('touchend', (e) => {
-        const t = e.changedTouches[0];
-        const now = Date.now();
-        // 1) 滑动翻页 (仅分页模式)
-        if (this.mode === 'paged' && swiping) {
-          const dx = t.clientX - tsX;
-          const dt = now - tsT;
-          if (dx < -50 && dt < 1200) this.nextPage();
-          else if (dx > 50 && dt < 1200) this.prevPage();
-          else scroll.scrollLeft = this.page * this.pageStride;   // 回弹
-          swiping = false;
-          lastTapAt = 0;   // 滑动不算轻点
+      const endGesture = (e) => {
+        clearLp();
+        const t = e.changedTouches ? e.changedTouches[0] : null;
+        if (lpFired) {
+          lpFired = false;
+          window.BW.Annotate._suppressToolbarOnce = true;   // 长按后抑制选区工具条
           return;
         }
-        // 2) 轻点双击检测 (分页/滚动模式都可用)
+        if (!t) return;
+        // 滑动翻页 (仅分页模式): 一次滑动只翻一页
+        if (this.mode === 'paged' && swiping) {
+          const dx = t.clientX - tsX;
+          swiping = false;
+          lastTapAt = 0;
+          if (dx < -45) this.nextPage();
+          else if (dx > 45) this.prevPage();
+          return;   // 页面位置从未偏离页边界, 无需回弹
+        }
+        // 轻点双击检测 (保留为长按之外的辅助手段)
         const drag = Math.hypot(t.clientX - tsX, t.clientY - tsY);
-        if (drag < 14 && now - lastTapAt < 400 && Math.abs(t.clientX - lastTapX) < 48 && Math.abs(t.clientY - lastTapY) < 48) {
+        if (drag < 14 && Date.now() - lastTapAt < 400 && Math.abs(t.clientX - lastTapX) < 48 && Math.abs(t.clientY - lastTapY) < 48) {
           lastTapAt = 0;
           this._doubleTapLookup(t.clientX, t.clientY);
         } else if (drag < 14) {
-          lastTapAt = now; lastTapX = t.clientX; lastTapY = t.clientY;
+          lastTapAt = Date.now(); lastTapX = t.clientX; lastTapY = t.clientY;
         } else {
           lastTapAt = 0;
         }
-      });
+      };
+      scroll.addEventListener('touchend', endGesture);
+      scroll.addEventListener('touchcancel', () => { clearLp(); swiping = false; });
 
       /* 电脑端滚轮: 分页模式一格滚轮翻一页 (连续滚动模式保持原生滚动) */
       scroll.addEventListener('wheel', (e) => {
@@ -549,31 +562,35 @@
         if (document.visibilityState === 'hidden') { try { this.saveProgress(true); } catch (e) {} }
       });
 
-      // 键盘
-      window.addEventListener('keydown', (e) => {
+      // 底部翻页按钮 (所有平台可见, 不依赖键盘/手势)
+      $('#rd-prev').addEventListener('click', () => { this.mode === 'paged' ? this.prevPage() : this.scrollByViewport(-1); });
+      $('#rd-next').addEventListener('click', () => { this.mode === 'paged' ? this.nextPage() : this.scrollByViewport(1); });
+
+      // 键盘 (document 捕获阶段 + e.key/e.code 双匹配, 保证翻页键可靠)
+      document.addEventListener('keydown', (e) => {
         if (!this.book || this.view.hidden) return;
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
         if (window.BW.modalOpen()) return;
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'f') {
           e.preventDefault();
           window.BW.Search.open();
           return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        switch (e.key) {
-          case 'ArrowRight': case 'PageDown': case ' ':
-            e.preventDefault();
-            if (this.mode === 'paged') this.nextPage(); else this.scrollByViewport(1);
-            break;
-          case 'ArrowLeft': case 'PageUp':
-            e.preventDefault();
-            if (this.mode === 'paged') this.prevPage(); else this.scrollByViewport(-1);
-            break;
-          case 'Home': e.preventDefault(); this.gotoG(0); break;
-          case 'End': e.preventDefault(); this.gotoG(Math.max(0, this.totalChars - 2)); break;
-        }
-      });
+        const code = e.code || '', key = e.key || '';
+        let act = null;
+        if (key === 'ArrowRight' || code === 'ArrowRight' || key === 'PageDown' || code === 'PageDown' || key === ' ' || code === 'Space') act = 'next';
+        else if (key === 'ArrowLeft' || code === 'ArrowLeft' || key === 'PageUp' || code === 'PageUp') act = 'prev';
+        else if (key === 'Home' || code === 'Home') act = 'home';
+        else if (key === 'End' || code === 'End') act = 'end';
+        if (!act) return;
+        e.preventDefault();
+        if (act === 'next') { this.mode === 'paged' ? this.nextPage() : this.scrollByViewport(1); }
+        else if (act === 'prev') { this.mode === 'paged' ? this.prevPage() : this.scrollByViewport(-1); }
+        else if (act === 'home') this.gotoG(0);
+        else this.gotoG(Math.max(0, this.totalChars - 2));
+      }, true);
     },
 
     setMode(m) {
