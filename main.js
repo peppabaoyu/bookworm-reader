@@ -512,7 +512,10 @@ ipcMain.handle('updater:check', async () => {
     if (!latest) return { status: 'error' };
     if (isNewerVersion(latest, current)) {
       const assets = data.assets || [];
-      const asset = assets.find(a => /书虫|bookworm|\.exe$/i.test(a.name)) || assets[0];
+      // 桌面版: 严格选 Windows 可执行文件, 绝不选安卓包
+      const asset = assets.find(a => /\.exe$/i.test(a.name))
+        || assets.find(a => !/\.apk$/i.test(a.name))
+        || assets[0];
       return {
         status: 'update-available',
         latest, current,

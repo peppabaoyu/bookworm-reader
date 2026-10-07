@@ -186,7 +186,12 @@
         const latest = String(data.tag_name || '').replace(/^v/i, '');
         const current = await shim.appVersion();
         if (latest && window.BW.gtVersion(latest, current)) {
-          const asset = (data.assets || []).find(a => /bookworm|书虫|\.exe$|\.apk$/i.test(a.name)) || (data.assets || [])[0];
+          const assets = data.assets || [];
+          // 手机选 apk, 其余(浏览器/桌面)选 exe
+          const isAndroid = /android/i.test(navigator.userAgent) || !!window.AndroidBridge;
+          const asset = assets.find(a => isAndroid ? /\.apk$/i.test(a.name) : /\.exe$/i.test(a.name))
+            || assets.find(a => !((isAndroid && /\.exe$/i.test(a.name)) || (!isAndroid && /\.apk$/i.test(a.name))))
+            || assets[0];
           return { status: 'update-available', latest, current, url: asset ? asset.browser_download_url : data.html_url, notes: String(data.body || '').slice(0, 600) };
         }
         return { status: 'up-to-date', current, latest };
